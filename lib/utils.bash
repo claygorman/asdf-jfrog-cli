@@ -2,8 +2,7 @@
 
 set -euo pipefail
 
-# TODO: Ensure this is the correct GitHub homepage where releases can be downloaded for jfrog-cli.
-GH_REPO="https://github.com/claygorman/asdf-jfrog-cli"
+GH_REPO="https://github.com/jfrog/jfrog-cli"
 TOOL_NAME="jfrog-cli"
 TOOL_TEST="jf --help"
 
@@ -13,11 +12,6 @@ fail() {
 }
 
 curl_opts=(-fsSL)
-
-# NOTE: You might want to remove this if jfrog-cli is not hosted on GitHub releases.
-if [ -n "${GITHUB_API_TOKEN:-}" ]; then
-	curl_opts=("${curl_opts[@]}" -H "Authorization: token $GITHUB_API_TOKEN")
-fi
 
 sort_versions() {
 	sed 'h; s/[+-]/./g; s/.p\([[:digit:]]\)/.z\1/; s/$/.z/; G; s/\n/ /' |
@@ -31,21 +25,64 @@ list_github_tags() {
 }
 
 list_all_versions() {
-	# TODO: Adapt this. By default we simply list the tag names from GitHub releases.
-	# Change this function if jfrog-cli has other means of determining installable versions.
+	# Use the github releases page since its much easier to parse then jfrog directly
 	list_github_tags
 }
 
 download_release() {
-	local version filename url
-	version="$1"
-	filename="$2"
+	local VERSION FILENAME URL CLI_OS
+	VERSION="$1"
+	FILENAME="$2"
+	CLI_OS="na"
+	IS_WINDOWS=$(echo "${OSTYPE}" | grep -q msys)
+	IS_MAC=$(echo "${OSTYPE}" | grep -q darwin)
 
-	# TODO: Adapt the release URL convention for jfrog-cli
-	url="$GH_REPO/archive/v${version}.tar.gz"
+	if [[ $IS_WINDOWS ]]; then
+		CLI_OS="windows"
+		URL="https://releases.jfrog.io/artifactory/jfrog-cli/v2-jf/${VERSION}/jfrog-cli-windows-amd64/jf.exe"
+		FILENAME="${FILENAME}.exe"
+	elif [[ $IS_MAC ]]; then
+		CLI_OS="mac"
+		if [[ $(uname -m) == 'arm64' ]]; then
+			URL="https://releases.jfrog.io/artifactory/jfrog-cli/v2-jf/${VERSION}/jfrog-cli-mac-arm64/jf"
+		else
+			URL="https://releases.jfrog.io/artifactory/jfrog-cli/v2-jf/${VERSION}/jfrog-cli-mac-386/jf"
+		fi
+	else
+		CLI_OS="linux"
+		MACHINE_TYPE="$(uname -m)"
+		case $MACHINE_TYPE in
+		i386 | i486 | i586 | i686 | i786 | x86)
+			ARCH="386"
+			;;
+		amd64 | x86_64 | x64)
+			ARCH="amd64"
+			;;
+		arm | armv7l)
+			ARCH="arm"
+			;;
+		aarch64)
+			ARCH="arm64"
+			;;
+		s390x)
+			ARCH="s390x"
+			;;
+		ppc64)
+			ARCH="ppc64"
+			;;
+		ppc64le)
+			ARCH="ppc64le"
+			;;
+		*)
+			echo "Unknown machine type: $MACHINE_TYPE"
+			exit 1
+			;;
+		esac
+		URL="https://releases.jfrog.io/artifactory/jfrog-cli/v2-jf/${VERSION}/jfrog-cli-${CLI_OS}-${ARCH}/jf"
+	fi
 
-	echo "* Downloading $TOOL_NAME release $version..."
-	curl "${curl_opts[@]}" -o "$filename" -C - "$url" || fail "Could not download $url"
+	echo "* Downloading $TOOL_NAME release $VERSION from $URL..."
+	curl "${curl_opts[@]}" -o "$FILENAME" -C - "$URL" || fail "Could not download $URL"
 }
 
 install_version() {
@@ -59,14 +96,17 @@ install_version() {
 
 	(
 		mkdir -p "$install_path"
-		cp -r "$ASDF_DOWNLOAD_PATH"/* "$install_path"
+		chmod u+x "$ASDF_DOWNLOAD_PATH/$TOOL_NAME"
+		cp "$ASDF_DOWNLOAD_PATH/$TOOL_NAME" "$install_path/jf"
 
-		# TODO: Assert jfrog-cli executable exists.
 		local tool_cmd
 		tool_cmd="$(echo "$TOOL_TEST" | cut -d' ' -f1)"
 		test -x "$install_path/$tool_cmd" || fail "Expected $install_path/$tool_cmd to be executable."
 
 		echo "$TOOL_NAME $version installation was successful!"
+
+		# Run the jfrog intro they suggest in their own install script
+		"$install_path/$tool_cmd" intro
 	) || (
 		rm -rf "$install_path"
 		fail "An error occurred while installing $TOOL_NAME $version."
