@@ -34,8 +34,8 @@ download_release() {
 	VERSION="$1"
 	FILENAME="$2"
 	CLI_OS="na"
-	IS_WINDOWS=$(echo "${OSTYPE}" | grep -q msys)
-	IS_MAC=$(echo "${OSTYPE}" | grep -q darwin)
+	IS_WINDOWS=$(echo "${OSTYPE}" | grep msys)
+	IS_MAC=$(echo "${OSTYPE}" | grep darwin)
 
 	if [[ $IS_WINDOWS ]]; then
 		CLI_OS="windows"
@@ -74,7 +74,7 @@ download_release() {
 			ARCH="ppc64le"
 			;;
 		*)
-			echo "Unknown machine type: $MACHINE_TYPE"
+			printf "Unknown machine type: %s\n" "$MACHINE_TYPE" >&2
 			exit 1
 			;;
 		esac
